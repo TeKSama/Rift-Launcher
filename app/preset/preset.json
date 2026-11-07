@@ -1,0 +1,31 @@
+{
+  "about": "Préréglage de TeK_Sama : appliqué au premier lancement de Rift Launcher (aucun chemin de fichier).",
+  "games": [
+    {
+      "name": "Zelda: Tears of the Kingdom",
+      "version": "0.3.1",
+      "repoUrl": "https://github.com/valentderah/totk-pc-recomp",
+      "franchise": "",
+      "args": "",
+      "env": "",
+      "coverFile": "totk.webp"
+    },
+    {
+      "name": "Zelda: Breath of the Wild",
+      "version": "1.9.0",
+      "repoUrl": "",
+      "franchise": "",
+      "args": "",
+      "env": "",
+      "coverFile": "botw.webp"
+    },
+    {
+      "name": "Splatoon 1",
+      "version": "",
+      "repoUrl": "",
+      "franchise": "splatoon",
+      "args": "",
+      "env": ""
+    }
+  ]
+}

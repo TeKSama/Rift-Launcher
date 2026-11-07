@@ -1,0 +1,6 @@
+# Keep Windows line endings and encoding as is
+*.ps1 -text
+*.bat -text
+*.cs -text
+*.ico binary
+*.png binary

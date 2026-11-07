@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>Rift Launcher</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Intro : 1) made by TeK_Sama  2) la faille s'ouvre sur « Rift Launcher » -->
+  <div id="splash" class="splash" aria-label="made by TeK_Sama — Rift Launcher">
+    <div class="scene" id="scene-sig">
+      <div class="signature">
+        <p class="made" id="made" aria-hidden="true"></p>
+        <p class="tek" id="tek" aria-hidden="true"></p>
+      </div>
+    </div>
+    <div class="scene scene-rift" id="scene-rift">
+      <div class="rift-mark" aria-hidden="true">
+        <span class="shock"></span>
+        <span class="shock shock-2"></span>
+        <svg viewBox="0 0 64 64" class="rift-svg">
+          <defs>
+            <radialGradient id="ir-halo" cx=".5" cy=".5" r=".5">
+              <stop offset="0" stop-color="#2f8cff" stop-opacity=".75"/>
+              <stop offset=".55" stop-color="#2f8cff" stop-opacity=".2"/>
+              <stop offset="1" stop-color="#2f8cff" stop-opacity="0"/>
+            </radialGradient>
+            <linearGradient id="ir-crack" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#9fd4ff"/>
+              <stop offset=".5" stop-color="#2f8cff"/>
+              <stop offset="1" stop-color="#7cc4ff"/>
+            </linearGradient>
+            <filter id="ir-blur" x="-1" y="-1" width="3" height="3"><feGaussianBlur stdDeviation="2.4"/></filter>
+          </defs>
+          <rect class="ir-box" x="2" y="2" width="60" height="60" rx="15"/>
+          <ellipse class="ir-halo" cx="32" cy="32" rx="22" ry="29" fill="url(#ir-halo)"/>
+          <g class="ir-rift">
+            <path d="M33 6 L37 17 L34 22.5 L39.5 32 L35 37.5 L37.5 47 L32 58 L28.5 47.5 L31 41 L25 31.5 L29.5 25 L26.5 15.5 Z" fill="#2f8cff" filter="url(#ir-blur)" opacity=".9"/>
+            <path d="M33 6 L37 17 L34 22.5 L39.5 32 L35 37.5 L37.5 47 L32 58 L28.5 47.5 L31 41 L25 31.5 L29.5 25 L26.5 15.5 Z" fill="url(#ir-crack)"/>
+            <path class="ir-core" d="M32.8 11 L34.6 17.5 L32.6 22.8 L35.8 32 L33 37.6 L34.4 46.5 L32 53 L30.6 46.8 L31.9 41 L28.6 31.6 L31.2 25 L30 16.5 Z" fill="#fff"/>
+          </g>
+          <rect class="ir-frame" x="2.75" y="2.75" width="58.5" height="58.5" rx="14.25"/>
+        </svg>
+        <div class="sparks" id="sparks"></div>
+      </div>
+      <p class="rift-name" id="rift-name" aria-hidden="true"></p>
+    </div>
+    <p class="skip">clic pour passer</p>
+  </div>
+
+  <header class="topbar">
+    <div class="brand">
+      <img class="logo" src="logo.svg" alt="" width="42" height="42">
+      <div>
+        <h1>Rift <span class="h1-light">Launcher</span></h1>
+        <p class="sub" id="total">—</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="big-btn" title="Mode Big Picture (plein écran, pour la manette)" aria-label="Mode Big Picture" aria-pressed="false"></button>
+      <button class="icon-btn" id="mute" title="Couper le son" aria-label="Couper le son"></button>
+      <button class="icon-btn" id="open-settings" title="Réglages" aria-label="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
+      <button class="btn btn-ghost" id="add">+ Ajouter un jeu</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="update-bar" id="update-bar" role="status" hidden></div>
+    <section id="hero" class="hero" hidden></section>
+    <h2 class="section-title" id="library-title">Bibliothèque <span class="hint">clic : sélectionner · double-clic : jouer · manette : A pour jouer</span></h2>
+    <section id="grid" class="grid"></section>
+    <p id="empty" class="empty" hidden>Aucun jeu pour l'instant. Clique sur « Ajouter un jeu ».</p>
+  </main>
+
+  <!-- Paramètres d'un jeu -->
+  <dialog id="editor">
+    <form method="dialog" id="form">
+      <h2 id="editor-title">Paramètres du jeu</h2>
+
+      <div class="form-cols">
+        <div class="form-col">
+      <label>Nom
+        <input name="name" required maxlength="80">
+      </label>
+
+      <label>Fichier du jeu (.exe ou .bat)
+        <span class="row">
+          <input name="exePath" placeholder="C:\…\jeu.exe">
+          <button type="button" class="btn btn-small" data-pick="exePath">Parcourir</button>
+        </span>
+      </label>
+
+      <label>Dossier de sauvegarde du jeu <small>(pour le bouton Sauvegarder)</small>
+        <span class="row">
+          <input name="saveDir" placeholder="C:\…\save">
+          <button type="button" class="btn btn-small" data-pick="saveDir">Parcourir</button>
+        </span>
+      </label>
+
+      <label>Dossier des mods <small>(pour la page Mods)</small>
+        <span class="row">
+          <input name="modsDir" placeholder="C:\…\mods">
+          <button type="button" class="btn btn-small" data-pick="modsDir">Parcourir</button>
+        </span>
+      </label>
+
+
+
+      <div class="two">
+        <label>Version du portage
+          <input name="version" placeholder="ex. 0.3.1">
+        </label>
+        <label>Page du projet (GitHub)
+          <input name="repoUrl" placeholder="https://github.com/…">
+        </label>
+      </div>
+
+      <details>
+        <summary>Options avancées</summary>
+        <label>Arguments de lancement
+          <input name="args" placeholder="ex. --fullscreen">
+        </label>
+        <label>Variables d'environnement <small>(une par ligne, CLE=valeur)</small>
+          <textarea name="env" rows="3" placeholder="RBREW_CONSOLE_LANGUAGE=2"></textarea>
+        </label>
+      </details>
+        </div>
+        <div class="form-col">
+      <div class="media" id="media">
+        <div class="cover-preview" id="cover-preview"></div>
+        <div class="media-ctrl">
+          <div>
+            <strong>Jaquette</strong>
+            <small data-i18n="html">Portrait <b>600 × 900 px</b> (ratio 2:3) · JPG, PNG ou WebP · 10 Mo max</small>
+            <div class="media-btns">
+              <button type="button" class="btn btn-small btn-primary" data-act="cover-search">Chercher en ligne</button>
+              <button type="button" class="btn btn-small" data-act="cover-pick">Choisir une image…</button>
+              <button type="button" class="btn btn-small btn-ghost" data-act="cover-clear">Retirer</button>
+            </div>
+            <p class="media-source" id="cover-source"></p>
+          </div>
+          <div>
+            <strong>Son</strong>
+            <small data-i18n="html">MP3, WAV ou OGG · <b>1 à 3 secondes</b> · 2 Mo max · joué à la sélection et au lancement</small>
+            <div class="media-btns">
+              <button type="button" class="btn btn-small" data-act="sound-test">▶ Écouter</button>
+              <button type="button" class="btn btn-small" data-act="sound-pick">Choisir un son…</button>
+              <button type="button" class="btn btn-small btn-ghost" data-act="sound-clear">Retirer</button>
+            </div>
+            <p class="media-source" id="sound-source"></p>
+          </div>
+        </div>
+      </div>
+      <p class="media-new" id="media-new" hidden>Enregistre d'abord le jeu, puis rouvre ses paramètres pour choisir sa jaquette et son son.</p>
+      <label>Licence <small>(donne la jaquette et le son automatiques)</small>
+        <select name="franchise" id="franchise-select">
+          <option value="">Automatique (d’après le nom)</option>
+        </select>
+      </label>
+        </div>
+      </div>
+
+      <p class="form-error" id="form-error" hidden></p>
+
+      <div class="actions">
+        <button type="button" class="btn btn-danger" id="delete">Retirer</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-ghost" id="cancel">Annuler</button>
+        <button type="submit" class="btn btn-primary" id="save">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Page des mods -->
+  <dialog id="mods" class="mods-dialog">
+    <div class="mods-wrap">
+      <div class="mods-head">
+        <div>
+          <h2 id="mods-title">Mods</h2>
+          <p class="mods-path" id="mods-path"></p>
+        </div>
+        <button class="icon-btn" id="mods-close" title="Fermer" aria-label="Fermer">✕</button>
+      </div>
+      <div class="mods-tools">
+        <input id="mods-search" type="search" placeholder="Rechercher un mod…" aria-label="Rechercher un mod">
+        <span class="mods-count" id="mods-count"></span>
+      </div>
+      <ul class="mods-list" id="mods-list"></ul>
+      <p class="mods-empty" id="mods-empty" hidden></p>
+      <div class="actions">
+        <button class="btn btn-ghost" id="mods-open">Ouvrir le dossier des mods</button>
+        <span class="spacer"></span>
+        <button class="btn btn-ghost" id="mods-refresh">Actualiser</button>
+      </div>
+      <p class="mods-hint">Un mod coupé est rangé dans le dossier « mods_desactives » à côté, rien n'est supprimé.</p>
+    </div>
+  </dialog>
+
+  <!-- Recherche de jaquettes en ligne -->
+  <dialog id="covers" class="covers-dialog">
+    <div class="covers-wrap">
+      <div class="mods-head">
+        <div>
+          <h2 id="covers-title">Jaquettes</h2>
+          <p class="mods-path">Jaquettes portrait de la communauté SteamGridDB</p>
+        </div>
+        <button class="icon-btn" id="covers-close" title="Fermer" aria-label="Fermer">✕</button>
+      </div>
+      <div class="mods-tools">
+        <input id="covers-term" type="search" placeholder="Nom du jeu…" aria-label="Nom du jeu">
+        <button class="btn btn-primary btn-small" id="covers-go">Rechercher</button>
+      </div>
+      <div class="covers-key" id="covers-key" hidden>
+        <p><strong>Une clé SteamGridDB (gratuite) est nécessaire pour chercher en ligne.</strong></p>
+        <ol>
+          <li data-i18n="html">Crée un compte sur <a href="https://www.steamgriddb.com" target="_blank" rel="noopener">steamgriddb.com</a> (connexion avec Steam).</li>
+          <li data-i18n="html">Va dans <b>Profil → Préférences → API</b> et génère une clé.</li>
+          <li>Colle-la ici :</li>
+        </ol>
+        <div class="row">
+          <input id="covers-key-input" placeholder="Ta clé API" autocomplete="off">
+          <button class="btn btn-primary btn-small" id="covers-key-save">Enregistrer</button>
+        </div>
+      </div>
+      <div class="chips" id="covers-games"></div>
+      <p class="covers-status" id="covers-status"></p>
+      <div class="covers-grid" id="covers-grid"></div>
+    </div>
+  </dialog>
+
+  <!-- Réglages : une catégorie à la fois (onglets à gauche, LB / RB à la manette) -->
+  <dialog id="settings">
+    <div class="set-wrap">
+      <nav class="set-nav" id="set-nav" aria-label="Catégories des réglages">
+        <h2>Réglages</h2>
+        <button class="set-tab" data-tab="general"><span class="set-ico">◐</span>Général</button>
+        <button class="set-tab" data-tab="sons"><span class="set-ico">♪</span>Sons</button>
+        <button class="set-tab" data-tab="manette"><span class="set-ico">◎</span>Manette</button>
+        <button class="set-tab" data-tab="jaquettes"><span class="set-ico">▣</span>Jaquettes</button>
+        <button class="set-tab" data-tab="discord"><span class="set-ico">●</span>Discord</button>
+        <button class="set-tab" data-tab="maj"><span class="set-ico">↻</span>Mises à jour</button>
+        <button class="set-tab" data-tab="journal"><span class="set-ico">≡</span>Journal</button>
+        <span class="spacer"></span>
+        <p class="set-version" id="settings-version"></p>
+      </nav>
+
+      <div class="set-main">
+        <div class="set-top">
+          <h3 id="set-title">Général</h3>
+          <button class="icon-btn" id="settings-close" title="Fermer" aria-label="Fermer">✕</button>
+        </div>
+
+        <section class="set-panel" data-tab="general">
+          <div class="pref-row pref-row-select">
+            <label for="pref-lang">Langue de l'application</label>
+            <select id="pref-lang" data-i18n="no"></select>
+          </div>
+          <p class="set-small">« Automatique » suit la langue de Windows. Les noms des jeux et des mods ne sont pas traduits.</p>
+        </section>
+
+        <section class="set-panel" data-tab="sons" hidden>
+          <div class="pref-row">
+            <label for="pref-volume">Volume général</label>
+            <input type="range" id="pref-volume" min="0" max="100" step="5">
+            <span class="pref-val" id="pref-volume-val"></span>
+          </div>
+          <div class="pref-row">
+            <label for="pref-uiVolume">Sons de l'interface <small>(clics, intro)</small></label>
+            <input type="range" id="pref-uiVolume" min="0" max="100" step="5">
+            <span class="pref-val" id="pref-uiVolume-val"></span>
+          </div>
+          <div class="pref-row">
+            <label for="pref-gameVolume">Sons des jeux <small>(licences, Navi…)</small></label>
+            <input type="range" id="pref-gameVolume" min="0" max="100" step="5">
+            <span class="pref-val" id="pref-gameVolume-val"></span>
+          </div>
+          <div class="pref-toggle">
+            <span>Petit clic en passant sur les jeux</span>
+            <button class="switch" role="switch" id="pref-hoverSounds" aria-label="Petit clic en passant sur les jeux"><span class="knob"></span></button>
+          </div>
+        </section>
+
+        <section class="set-panel" data-tab="manette" hidden>
+          <div class="pref-toggle">
+            <span>Bouton Home : passer du jeu au launcher <small>(rappuie pour revenir au jeu)</small></span>
+            <button class="switch" role="switch" id="pref-homeToggle" aria-label="Bouton Home de la manette"><span class="knob"></span></button>
+          </div>
+          <p class="set-small">Marche en plein jeu avec les manettes Xbox, PlayStation 4/5 et Switch Pro.
+             Manette Xbox : coupe « Ouvrir la Game Bar avec ce bouton » dans Paramètres Windows → Jeux → Game Bar.</p>
+          <div class="pref-toggle">
+            <span>Bouton capture : capture d'écran <small>(Share / Créer, Capture)</small></span>
+            <button class="switch" role="switch" id="pref-captureButton" aria-label="Bouton capture de la manette"><span class="knob"></span></button>
+          </div>
+          <p class="set-small" data-i18n="html">Captures rangées par jeu dans <b>Images\Rift Launcher</b> (bouton 📷 d'un jeu pour les voir).
+             Sur manette Xbox, le bouton Partager reste à la Game Bar (Vidéos\Captures).</p>
+          <div class="pad-legend" id="pad-legend"></div>
+        </section>
+
+        <section class="set-panel" data-tab="jaquettes" hidden>
+          <p data-i18n="html">Une image ou un son nommé comme une licence s'applique à <b>tous ses jeux</b> :
+             <code>zelda.png</code>, <code>zelda.mp3</code>… ou <code>zelda-tears-of-the-kingdom.jpg</code> pour un seul jeu.
+             Un dossier <code>sons\zelda\</code> avec plusieurs sons : un son au hasard à chaque fois.</p>
+          <p class="set-small">Jaquettes : portrait 600 × 900 px (2:3), JPG/PNG/WebP, 10 Mo max · Sons : MP3/WAV/OGG, 1 à 3 s, 2 Mo max.</p>
+          <div class="media-btns">
+            <button class="btn btn-small" id="open-covers-dir">Dossier des jaquettes</button>
+            <button class="btn btn-small" id="open-sounds-dir">Dossier des sons</button>
+          </div>
+          <p class="set-small">Licences reconnues :</p>
+          <div class="keys" id="settings-keys"></div>
+          <p class="mods-path" id="settings-cover-dir" hidden></p>
+          <p class="mods-path" id="settings-sound-dir" hidden></p>
+          <div class="set-sub">
+            <p class="set-small" data-i18n="html">Recherche en ligne : clé API gratuite de <a href="https://www.steamgriddb.com" target="_blank" rel="noopener">steamgriddb.com</a> (Profil → Préférences → API). <span id="settings-key-state"></span></p>
+            <div class="row">
+              <input id="settings-key" placeholder="Coller une nouvelle clé (vide = effacer)" autocomplete="off">
+              <button class="btn btn-primary btn-small" id="settings-save">Enregistrer</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="set-panel" data-tab="discord" hidden>
+          <p data-i18n="html">Ton profil affiche « <b>Joue à Rift Launcher</b> » : « Navigue dans les menus », puis le jeu lancé « via Rift Launcher » avec le temps de jeu.</p>
+          <div class="pref-toggle">
+            <span>Afficher mon activité sur Discord</span>
+            <button class="switch" role="switch" id="pref-discord" aria-label="Afficher mon activité sur Discord"><span class="knob"></span></button>
+          </div>
+          <p class="set-small" id="discord-state"></p>
+          <details id="discord-adv">
+            <summary>ID de l'application Discord (avancé)</summary>
+            <div class="row">
+              <input id="discord-id" placeholder="Application ID" autocomplete="off" inputmode="numeric">
+              <button class="btn btn-primary btn-small" id="discord-save">Enregistrer</button>
+            </div>
+          </details>
+        </section>
+
+        <section class="set-panel" data-tab="maj" hidden>
+          <p data-i18n="html">Rift Launcher cherche une nouvelle version à chaque lancement. Version installée : <b id="settings-current"></b></p>
+          <div class="media-btns">
+            <button class="btn btn-small" id="check-update">Vérifier les mises à jour</button>
+          </div>
+          <div class="pref-toggle">
+            <span>Surveiller les nouvelles versions des portages <small>(jeux avec une page GitHub)</small></span>
+            <button class="switch" role="switch" id="pref-recompCheck" aria-label="Surveiller les portages"><span class="knob"></span></button>
+          </div>
+          <p class="set-small">Compare la version indiquée dans les paramètres du jeu à la dernière sur GitHub, au démarrage puis toutes les 6 heures.</p>
+          <div class="media-btns">
+            <button class="btn btn-small" id="check-recomps">Vérifier les portages</button>
+          </div>
+        </section>
+
+        <section class="set-panel" data-tab="journal" hidden>
+          <p data-i18n="html">Rift Launcher note tout ce qu'il fait dans un journal. En cas de souci, <b>Créer un rapport de bug</b> met un
+             <code>.zip</code> sur ton Bureau à envoyer à TeK_Sama (sans ta clé, tes jeux ni tes sauvegardes).</p>
+          <div class="media-btns">
+            <button class="btn btn-small btn-primary" id="make-report">Créer un rapport de bug</button>
+            <button class="btn btn-small" id="open-logs">Ouvrir les journaux</button>
+          </div>
+          <div class="pref-toggle">
+            <span>Journal détaillé <small>(pour enquêter sur un bug)</small></span>
+            <button class="switch" role="switch" id="pref-debugLog" aria-label="Journal détaillé"><span class="knob"></span></button>
+          </div>
+          <p class="mods-path" id="settings-log-dir"></p>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="update-overlay" id="update-overlay" hidden>
+    <div class="update-card">
+      <img src="logo.svg" alt="" width="64" height="64" class="update-logo">
+      <h2 id="update-title">Mise à jour…</h2>
+      <p id="update-msg"></p>
+      <div class="update-spinner" aria-hidden="true"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div id="pad-hints" class="pad-hints" aria-hidden="true" hidden></div>
+  <script src="i18n.js"></script>
+  <script src="i18n-dict.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

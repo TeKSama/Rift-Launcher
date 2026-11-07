@@ -1,0 +1,13 @@
+# Built files
+*.exe
+# Official game artwork is never committed
+app/preset/covers/
+app/web/covers/*.webp
+app/web/covers/*.jpg
+app/web/covers/*.png
+# Personal data (never part of the project)
+.env
+*.env
+settings.json
+library.json
+token.txt
