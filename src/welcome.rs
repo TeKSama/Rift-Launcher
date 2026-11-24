@@ -26,7 +26,7 @@ impl App {
     }
 
     pub fn welcome_skip_if_known(&self) {
-        if self.games.is_empty() || !self.welcome_wanted() {
+        if !self.welcome_wanted() || self.preset_games().iter().any(|pg| !self.owned(&pg.str("name"))) {
             return;
         }
         let mut s = self.settings();
