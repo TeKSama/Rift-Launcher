@@ -1,0 +1,16 @@
+[package]
+name = "rift-launcher"
+version = "2.0.0-alpha.1"
+edition = "2021"
+
+[[bin]]
+name = "RiftLauncher"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true
+
+[features]
+wincheck = []

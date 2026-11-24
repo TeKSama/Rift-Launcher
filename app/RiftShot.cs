@@ -1,13 +1,3 @@
-// RiftShot.exe : capture d'ecran fidele pour Rift Launcher (DXGI Desktop Duplication).
-// made by TeK_Sama. Compile par RiftLauncher.ps1 au premier besoin, en C# 5.
-//
-// Les jeux recents (Vulkan / DirectX en plein ecran sans bordure) s'affichent sans passer par
-// la composition classique de Windows : une capture « GDI » renvoie alors une vieille image
-// (celle du moment ou la fenetre a pris le focus). La duplication de bureau DXGI lit l'image
-// reellement envoyee a l'ecran.
-//
-//   RiftShot.exe <fichier.png> <x> <y>     x, y : un point de l'ecran a capturer
-//   code de sortie : 0 = ok, autre = echec (Rift Launcher fait alors une capture classique)
 using System;
 using System.Drawing;
 using System.Drawing.Imaging;
@@ -20,7 +10,6 @@ static class RiftShot
     static extern int D3D11CreateDevice(IntPtr adapter, int driverType, IntPtr software, uint flags, IntPtr levels,
                                         uint levelCount, uint sdkVersion, out IntPtr device, out int level, out IntPtr context);
 
-    // Appels COM par la table des methodes (index verifies sur les en-tetes DXGI / D3D11).
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int EnumFn(IntPtr self, uint index, out IntPtr item);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int DescFn(IntPtr self, IntPtr desc);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate void VoidDescFn(IntPtr self, IntPtr desc);
@@ -32,10 +21,10 @@ static class RiftShot
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate int MapFn(IntPtr self, IntPtr resource, uint sub, int type, uint flags, IntPtr mapped);
     [UnmanagedFunctionPointer(CallingConvention.StdCall)] delegate void UnmapFn(IntPtr self, IntPtr resource, uint sub);
 
-    const int FACTORY1_ENUMADAPTERS1 = 12;   // IUnknown 3 + IDXGIObject 4 + IDXGIFactory 5
+    const int FACTORY1_ENUMADAPTERS1 = 12;
     const int ADAPTER_ENUMOUTPUTS = 7;
     const int OUTPUT_GETDESC = 7;
-    const int OUTPUT1_DUPLICATEOUTPUT = 22;  // + IDXGIOutput 12 + 3 premieres de IDXGIOutput1
+    const int OUTPUT1_DUPLICATEOUTPUT = 22;
     const int DUP_GETDESC = 7;
     const int DUP_ACQUIRENEXTFRAME = 8;
     const int DUP_RELEASEFRAME = 14;
@@ -94,7 +83,6 @@ static class RiftShot
             Guid iid = IID_IDXGIFactory1;
             Check(CreateDXGIFactory1(ref iid, out factory), "CreateDXGIFactory1");
 
-            // L'ecran qui contient le point (x, y), sur la bonne carte graphique.
             bool found = false;
             for (uint a = 0; !found; a++)
             {
@@ -126,7 +114,6 @@ static class RiftShot
             int width = Marshal.ReadInt32(buf, 0), height = Marshal.ReadInt32(buf, 4), format = Marshal.ReadInt32(buf, 16);
             if (format != 87 && format != 91) throw new Exception("format d'ecran non gere (" + format + ", HDR ?)");
 
-            // Premiere image disponible (la duplication donne tout de suite l'image affichee).
             for (int i = 0; i < 6 && resource == IntPtr.Zero; i++)
             {
                 int hr = Method<AcquireFn>(dup, DUP_ACQUIRENEXTFRAME)(dup, 250, buf, out resource);
@@ -140,12 +127,11 @@ static class RiftShot
             Guid iidTex = IID_ID3D11Texture2D;
             Check(Marshal.QueryInterface(resource, ref iidTex, out texture), "ID3D11Texture2D");
 
-            // Texture lisible par le processeur, de la meme taille.
-            int[] desc = { width, height, 1, 1, format, 1, 0, 3 /* STAGING */, 0, 0x20000 /* CPU_ACCESS_READ */, 0 };
+            int[] desc = { width, height, 1, 1, format, 1, 0, 3, 0, 0x20000, 0 };
             Marshal.Copy(desc, 0, buf, desc.Length);
             Check(Method<CreateTexFn>(device, DEVICE_CREATETEXTURE2D)(device, buf, IntPtr.Zero, out staging), "CreateTexture2D");
             Method<CopyFn>(context, CONTEXT_COPYRESOURCE)(context, staging, texture);
-            Check(Method<MapFn>(context, CONTEXT_MAP)(context, staging, 0, 1 /* READ */, 0, buf), "Map");
+            Check(Method<MapFn>(context, CONTEXT_MAP)(context, staging, 0, 1, 0, buf), "Map");
             try
             {
                 IntPtr data = Marshal.ReadIntPtr(buf, 0);

@@ -1,11 +1,4 @@
 'use strict';
-// Rift Launcher : traductions. made by TeK_Sama
-//
-// Le français est la langue d'origine : chaque texte français sert de clé.
-// t('Il y a {n} min', { n: 5 }) renvoie la traduction de la langue choisie (ou le français).
-// Les textes fixes de la page (index.html) sont traduits automatiquement au chargement ;
-// les paragraphes avec du gras ou du code portent data-i18n="html" et sont traduits en entier.
-// Les dictionnaires sont dans i18n-dict.js (I18N_DICT).
 
 const I18N_LANGS = [
   { code: 'auto', name: 'Automatique (langue de Windows)' },
@@ -19,10 +12,10 @@ const I18N_LANGS = [
 
 const i18n = (() => {
   let choice = 'auto';
-  try { choice = localStorage.getItem('rift-lang') || 'auto'; } catch (e) { /* stockage indisponible */ }
+  try { choice = localStorage.getItem('rift-lang') || 'auto'; } catch (e) {}
   let lang = 'fr';
   let dict = null;
-  let patterns = [];   // clés avec {variables}, pour traduire les messages du serveur
+  let patterns = [];
 
   const norm = (s) => s.replace(/\s+/g, ' ').trim();
   const fill = (s, vars) => (vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s);
@@ -44,7 +37,6 @@ const i18n = (() => {
       const rx = key.replace(/[.*+?^$()|[\]\\]/g, '\\$&').replace(/\\?\{(\w+)\\?\}/g, (m, n) => { names.push(n); return '(.+?)'; });
       patterns.push({ re: new RegExp('^' + rx + '$'), names, key });
     }
-    // Les messages du serveur qui finissent par « : » sont suivis d'un détail technique.
     for (const key of Object.keys(dict)) if (/ : $/.test(key)) patterns.push({ prefix: key });
   }
 
@@ -56,7 +48,6 @@ const i18n = (() => {
     return fill(tr != null ? tr : fr, vars);
   }
 
-  // Message venu d'ailleurs (serveur) : texte exact, modèle avec variables, ou préfixe « … : ».
   function tMsg(msg) {
     if (!dict || !msg) return msg;
     const k = norm(msg);
@@ -69,19 +60,17 @@ const i18n = (() => {
     return msg;
   }
 
-  // ---------- Traduction de la page fixe
-  const originals = new WeakMap();   // nœud -> texte français d'origine
+  const originals = new WeakMap();
   const SKIP = new Set(['SCRIPT', 'STYLE', 'CODE', 'TEXTAREA']);
   const ATTRS = ['title', 'placeholder', 'aria-label'];
 
   function translatePage(root) {
     root = root || document.body;
-    // Paragraphes entiers (avec gras, code, liens…)
     root.querySelectorAll('[data-i18n="html"]').forEach((el) => {
       if (!originals.has(el)) originals.set(el, el.innerHTML);
       const fr = originals.get(el);
       const tr = dict ? dict[norm(fr)] : null;
-      el.innerHTML = tr != null ? tr : fr;   // textes fixes écrits par nous, sans contenu extérieur
+      el.innerHTML = tr != null ? tr : fr;
     });
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode(n) {
@@ -121,7 +110,7 @@ const i18n = (() => {
     const info = I18N_LANGS.find((l) => l.code === lang) || I18N_LANGS[1];
     document.documentElement.lang = lang;
     document.documentElement.dir = info.rtl ? 'rtl' : 'ltr';
-    if (save) { try { localStorage.setItem('rift-lang', choice); } catch (e) { /* rien */ } }
+    if (save) { try { localStorage.setItem('rift-lang', choice); } catch (e) {} }
     translatePage(document.body);
   }
 

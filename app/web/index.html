@@ -8,7 +8,6 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Intro : 1) made by TeK_Sama  2) la faille s'ouvre sur « Rift Launcher » -->
   <div id="splash" class="splash" aria-label="made by TeK_Sama — Rift Launcher">
     <div class="scene" id="scene-sig">
       <div class="signature">
@@ -50,6 +49,7 @@
     <p class="skip">clic pour passer</p>
   </div>
 
+  <div id="app-bg" class="app-bg" aria-hidden="true"></div>
   <header class="topbar">
     <div class="brand">
       <img class="logo" src="logo.svg" alt="" width="42" height="42">
@@ -59,9 +59,9 @@
       </div>
     </div>
     <div class="top-actions">
-      <button class="icon-btn" id="big-btn" title="Mode Big Picture (plein écran, pour la manette)" aria-label="Mode Big Picture" aria-pressed="false"></button>
-      <button class="icon-btn" id="mute" title="Couper le son" aria-label="Couper le son"></button>
-      <button class="icon-btn" id="open-settings" title="Réglages" aria-label="Réglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg></button>
+      <button class="txt-btn" id="big-btn" title="Mode Big Picture (plein écran, pour la manette)" aria-label="Mode Big Picture" aria-pressed="false"></button>
+      <button class="txt-btn" id="mute" title="Couper le son" aria-label="Couper le son"></button>
+      <button class="txt-btn" id="open-settings" title="Réglages">Réglages</button>
       <button class="btn btn-ghost" id="add">+ Ajouter un jeu</button>
     </div>
   </header>
@@ -69,12 +69,20 @@
   <main>
     <div class="update-bar" id="update-bar" role="status" hidden></div>
     <section id="hero" class="hero" hidden></section>
-    <h2 class="section-title" id="library-title">Bibliothèque <span class="hint">clic : sélectionner · double-clic : jouer · manette : A pour jouer</span></h2>
+    <div class="lib-head" id="library-title">
+      <h2 class="section-title">Bibliothèque <span class="hint">clic : sélectionner · double-clic : jouer · manette : A pour jouer</span></h2>
+      <input type="search" id="lib-search" placeholder="Rechercher un jeu…">
+      <select id="lib-sort">
+        <option value="recent">Récents</option>
+        <option value="time">Temps de jeu</option>
+        <option value="name">A → Z</option>
+      </select>
+    </div>
     <section id="grid" class="grid"></section>
+    <section id="recent-shots" class="recent-shots" hidden><h2 class="section-title">Dernières captures</h2><div id="recent-shots-row" class="recent-shots-row"></div></section>
     <p id="empty" class="empty" hidden>Aucun jeu pour l'instant. Clique sur « Ajouter un jeu ».</p>
   </main>
 
-  <!-- Paramètres d'un jeu -->
   <dialog id="editor">
     <form method="dialog" id="form">
       <h2 id="editor-title">Paramètres du jeu</h2>
@@ -105,8 +113,6 @@
           <button type="button" class="btn btn-small" data-pick="modsDir">Parcourir</button>
         </span>
       </label>
-
-
 
       <div class="two">
         <label>Version du portage
@@ -142,6 +148,14 @@
             <p class="media-source" id="cover-source"></p>
           </div>
           <div>
+            <strong>Logo</strong>
+            <small>PNG transparent, affiché à la place du titre</small>
+            <div class="media-btns">
+              <button type="button" class="btn btn-small" data-act="logo-pick">Choisir un logo…</button>
+              <button type="button" class="btn btn-small btn-ghost" data-act="logo-clear">Retirer</button>
+            </div>
+          </div>
+          <div>
             <strong>Son</strong>
             <small data-i18n="html">MP3, WAV ou OGG · <b>1 à 3 secondes</b> · 2 Mo max · joué à la sélection et au lancement</small>
             <div class="media-btns">
@@ -173,7 +187,6 @@
     </form>
   </dialog>
 
-  <!-- Page des mods -->
   <dialog id="mods" class="mods-dialog">
     <div class="mods-wrap">
       <div class="mods-head">
@@ -198,7 +211,6 @@
     </div>
   </dialog>
 
-  <!-- Recherche de jaquettes en ligne -->
   <dialog id="covers" class="covers-dialog">
     <div class="covers-wrap">
       <div class="mods-head">
@@ -230,7 +242,31 @@
     </div>
   </dialog>
 
-  <!-- Réglages : une catégorie à la fois (onglets à gauche, LB / RB à la manette) -->
+  <dialog id="welcome" class="welcome-dialog">
+    <div class="welcome-wrap">
+      <section class="welcome-step" id="welcome-ask">
+        <p class="welcome-kicker">Bienvenue dans Rift Launcher</p>
+        <h2>Précharger des jeux ?</h2>
+        <p class="welcome-text">Rift Launcher peut ajouter des portages connus avec leur jaquette, leur son et leur lien GitHub. Il te restera à choisir le .exe de chaque jeu.</p>
+        <div class="actions">
+          <button class="btn btn-primary" id="welcome-yes">Oui</button>
+          <button class="btn btn-ghost" id="welcome-skip">Passer</button>
+        </div>
+      </section>
+      <section class="welcome-step" id="welcome-pick" hidden>
+        <p class="welcome-kicker">Préchargement</p>
+        <h2>Choisis tes jeux</h2>
+        <p class="welcome-text">Seuls les jeux cochés sont ajoutés. Ils apparaîtront « À configurer » jusqu'à ce que tu choisisses leur .exe.</p>
+        <ul class="welcome-list" id="welcome-list"></ul>
+        <div class="actions">
+          <button class="btn btn-ghost" id="welcome-skip-list">Passer</button>
+          <span class="spacer"></span>
+          <button class="btn btn-primary" id="welcome-add">Ajouter</button>
+        </div>
+      </section>
+    </div>
+  </dialog>
+
   <dialog id="settings">
     <div class="set-wrap">
       <nav class="set-nav" id="set-nav" aria-label="Catégories des réglages">
@@ -258,6 +294,18 @@
             <select id="pref-lang" data-i18n="no"></select>
           </div>
           <p class="set-small">« Automatique » suit la langue de Windows. Les noms des jeux et des mods ne sont pas traduits.</p>
+          <div class="pref-row pref-row-select">
+            <label for="pref-theme">Thème</label>
+            <select id="pref-theme">
+              <option value="rift">Faille (violet)</option>
+              <option value="hyrule">Hyrule (vert)</option>
+              <option value="nuit">Bleu (classique)</option>
+            </select>
+          </div>
+          <div class="pref-row pref-row-select">
+            <label for="welcome-open">Précharger des jeux</label>
+            <button class="btn btn-ghost btn-small" id="welcome-open">Ouvrir</button>
+          </div>
         </section>
 
         <section class="set-panel" data-tab="sons" hidden>

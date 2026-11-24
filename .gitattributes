@@ -4,3 +4,6 @@
 *.cs -text
 *.ico binary
 *.png binary
+*.jpg binary
+*.webp binary
+*.wav binary

@@ -1,15 +1,13 @@
 'use strict';
-i18n.init();   // langue choisie (ou celle de Windows) avant tout affichage
+i18n.init();
 
-// ---------- Lien avec le script PowerShell (serveur local) ----------
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
 let offline = false;
 
 function fix(data) {
-  // PowerShell peut renvoyer un objet seul au lieu d'une liste.
   return {
     games: [].concat(data.games || []), running: [].concat(data.running || []),
-    version: data.version || '', update: data.update || null, capture: data.capture || null,
+    version: data.version || '', update: data.update || null, capture: data.capture || null, welcome: !!data.welcome,
   };
 }
 
@@ -40,12 +38,13 @@ const api = {
   openBackups: (id) => call('openBackups', { id }),
   openFolder: (id) => call('openFolder', { id }),
   openRepo: (id) => call('openRepo', { id }),
-  pickExe: () => call('pick', { kind: 'exe' }).then((d) => d.path || null),
-  pickDir: (kind) => call('pick', { kind: kind || 'dir' }).then((d) => d.path || null),
+  pickExe: (current) => call('pick', { kind: 'exe', current: current || '' }).then((d) => d.path || null),
+  pickDir: (kind, current) => call('pick', { kind: kind || 'dir', current: current || '' }).then((d) => d.path || null),
   listMods: (id) => call('mods', { id }),
   setMod: (id, name, enabled) => call('modSet', { id, name, enabled }),
   openMods: (id) => call('openMods', { id }),
   coverPick: (id) => call('coverPick', { id }),
+  logoPick: (id) => call('logoPick', { id }),
   soundPick: (id) => call('soundPick', { id }),
   assetClear: (id, kind) => call('assetClear', { id, kind }),
   coverSearch: (term, sgdbId) => call('coverSearch', { term, sgdbId }),
@@ -65,15 +64,16 @@ const api = {
   capture: () => call('capture'),
   openCaptures: (id) => call('openCaptures', { id }),
   openLogs: () => call('openLogs'),
+  welcome: () => call('welcome'),
+  welcomeDone: (picks) => call('welcomeDone', { picks }),
   log: (level, message, stack) => call('log', { level, message, stack }).catch(() => {}),
   onChange: (fn) => setInterval(() => api.getLibrary().then(fn).catch(() => {}), 2000),
   onToast: () => {},
 };
-// Toute erreur de l'interface est écrite dans le journal de Rift Launcher.
 addEventListener('error', (e) => api.log('ERROR', `${e.message} (${(e.filename || '').split('/').pop()}:${e.lineno}:${e.colno})`, e.error && e.error.stack));
 addEventListener('unhandledrejection', (e) => {
   const r = e.reason || {};
-  if (offline) return; // le serveur est arrêté : rien à écrire
+  if (offline) return;
   api.log('ERROR', `Promesse rejetée : ${r.message || r}`, r.stack);
 });
 addEventListener('pagehide', () => navigator.sendBeacon('/api/bye?t=' + encodeURIComponent(TOKEN), '{}'));
@@ -81,21 +81,18 @@ addEventListener('pagehide', () => navigator.sendBeacon('/api/bye?t=' + encodeUR
 let state = { games: [], running: [] };
 let editingId = null;
 
-// ---------- Sons (synthétisés, aucun fichier audio) ----------
 const sfx = (() => {
-  // Direction sonore : petits clics doux (façon menus de console) et notes de « cloche »
-  // feutrées. Tout est synthétisé, aucun fichier audio.
   let ctx = null;
   let master = null;
-  let uiBus = null;     // sons de l'interface (clics, intro)
-  let gameBus = null;   // sons des jeux (licences, sons perso)
-  let bus = null;       // bus utilisé par les voix en ce moment
+  let uiBus = null;
+  let gameBus = null;
+  let bus = null;
   let noiseBuf = null;
-  let revBus = null;    // envoi vers la réverbération
-  let introTheme = 'd';   // mélange B + C choisi par TeK_Sama
+  let revBus = null;
+  let introTheme = 'd';
   let prefs = { volume: 80, uiVolume: 70, gameVolume: 100, hoverSounds: true };
   let muted = false;
-  try { muted = localStorage.getItem('tek-muted') === '1'; } catch (e) { /* stockage indisponible */ }
+  try { muted = localStorage.getItem('tek-muted') === '1'; } catch (e) {}
 
   function ready() {
     if (!ctx) {
@@ -103,7 +100,6 @@ const sfx = (() => {
       if (!AC) return null;
       ctx = new AC();
       master = ctx.createGain();
-      // Filtre doux + léger compresseur : rien d'agressif dans les aigus.
       const soft = ctx.createBiquadFilter();
       soft.type = 'lowpass'; soft.frequency.value = 9000; soft.Q.value = 0.4;
       const comp = ctx.createDynamicsCompressor();
@@ -112,7 +108,6 @@ const sfx = (() => {
       uiBus = ctx.createGain(); uiBus.connect(master);
       gameBus = ctx.createGain(); gameBus.connect(master);
       bus = uiBus;
-      // Réverbération (réponse synthétique de ~2,4 s) : donne de l'espace à l'intro.
       const rev = ctx.createConvolver();
       const len = Math.floor(ctx.sampleRate * 2.4);
       const ir = ctx.createBuffer(2, len, ctx.sampleRate);
@@ -139,7 +134,6 @@ const sfx = (() => {
     gameBus.gain.value = prefs.gameVolume / 100;
   }
 
-  // Note pure (sinus / triangle) avec enveloppe douce.
   function tone({ f = 600, f2 = 0, type = 'sine', t = 0, dur = 0.15, vol = 0.3, attack = 0.006 }) {
     if (muted) return;
     const c = ready();
@@ -147,7 +141,7 @@ const sfx = (() => {
     const now = c.currentTime + t;
     const o = c.createOscillator();
     const g = c.createGain();
-    o.type = type === 'square' || type === 'sawtooth' ? 'triangle' : type;   // jamais de son « 8 bits »
+    o.type = type === 'square' || type === 'sawtooth' ? 'triangle' : type;
     o.frequency.setValueAtTime(f, now);
     if (f2) o.frequency.exponentialRampToValueAtTime(f2, now + dur * 0.7);
     g.gain.setValueAtTime(0.0001, now);
@@ -159,7 +153,6 @@ const sfx = (() => {
     o.stop(now + dur + 0.03);
   }
 
-  // « Cloche » feutrée : fondamentale + harmoniques qui s'éteignent vite (piano / célesta doux).
   function bell({ f, t = 0, dur = 0.9, vol = 0.18, wet = 0.2 }) {
     if (muted) return;
     const c = ready();
@@ -178,7 +171,6 @@ const sfx = (() => {
     });
   }
 
-  // Clic : bruit très court filtré + petit corps tonal (comme un bouton physique).
   function click({ t = 0, f = 3200, q = 2.2, body = 0, vol = 0.22, dur = 0.022 } = {}) {
     if (muted) return;
     const c = ready();
@@ -190,14 +182,13 @@ const sfx = (() => {
     bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
     const g = c.createGain();
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(vol * 2.6, now + 0.0015);   // le filtre étroit mange le volume
+    g.gain.exponentialRampToValueAtTime(vol * 2.6, now + 0.0015);
     g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
     src.connect(bp); bp.connect(g); g.connect(bus);
     src.start(now, Math.random() * 0.3); src.stop(now + dur + 0.02);
     if (body) tone({ f: body, f2: body * 0.82, t, dur: dur * 2.2, vol: vol * 0.5, attack: 0.002 });
   }
 
-  // Souffle filtré : l'ouverture de la faille.
   function whoosh({ t = 0, dur = 0.9, from = 250, to = 2600, vol = 0.22 } = {}) {
     if (muted) return;
     const c = ready();
@@ -220,7 +211,6 @@ const sfx = (() => {
     src.stop(now + dur + 0.05);
   }
 
-  // Nappe chaude (accord tenu) sous la faille.
   function pad(freqs, { t = 0, dur = 2.4, vol = 0.05 } = {}) {
     if (muted) return;
     const c = ready();
@@ -240,14 +230,11 @@ const sfx = (() => {
     });
   }
 
-
-  // Envoie une voix vers le bus courant, avec un peu de réverbération si wet > 0.
   function out(node, wet) {
     node.connect(bus);
     if (wet && revBus) { const s = ctx.createGain(); s.gain.value = wet; node.connect(s); s.connect(revBus); }
   }
 
-  // Piano électrique (FM douce, façon Rhodes).
   function epiano({ f, t = 0, dur = 1.6, vol = 0.12, wet = 0.3 }) {
     if (muted) return;
     const c = ready();
@@ -269,7 +256,6 @@ const sfx = (() => {
     car.start(now); mod.start(now); car.stop(now + dur + 0.05); mod.stop(now + dur + 0.05);
   }
 
-  // Cloche métallique (partiels non harmoniques) pour l'ambiance « faille ».
   function metal({ f, t = 0, dur = 1.8, vol = 0.1, wet = 0.45 }) {
     if (muted) return;
     const c = ready();
@@ -286,7 +272,6 @@ const sfx = (() => {
     });
   }
 
-  // Impact grave (« boum » de cinéma) : sinus qui plonge + souffle étouffé.
   function boom({ t = 0, vol = 0.5, wet = 0.5 } = {}) {
     if (muted) return;
     const c = ready();
@@ -311,7 +296,6 @@ const sfx = (() => {
     src.start(now); src.stop(now + 0.55);
   }
 
-  // Nappe de cuivres doux (scie filtrée qui s'ouvre lentement) : accord final épique.
   function brass(freqs, { t = 0, dur = 2.6, vol = 0.05, wet = 0.5 } = {}) {
     if (muted) return;
     const c = ready();
@@ -335,13 +319,11 @@ const sfx = (() => {
     });
   }
 
-  // Montée de souffle avant l'ouverture (« riser »).
   function riser({ t = 0, dur = 1.3, vol = 0.14 } = {}) {
     whoosh({ t, dur, from: 150, to: 6000, vol });
     tone({ f: 110, f2: 440, t, dur, vol: vol * 0.4, attack: dur * 0.8 });
   }
 
-  // ---------------- Les intros : a = douce (console), b = chill (piano électrique), c = épique (faille), d = mélange B + C (celle utilisée)
   const IN = {
     a: {
       type: () => click({ f: 2400 + Math.random() * 600, q: 1.6, vol: 0.12, dur: 0.018 }),
@@ -367,13 +349,12 @@ const sfx = (() => {
       name: (i) => metal({ f: [880, 1174.66, 1318.51, 1760][i % 4], dur: 1.2, vol: 0.045 }),
       end: () => { brass([146.83, 220, 293.66, 349.23, 440], { dur: 3, vol: 0.045 }); metal({ f: 587.33, dur: 2.4, vol: 0.06 }); },
     },
-    // d = mélange B + C : le piano électrique de la B, porté par les impacts et les cuivres de la C.
     d: {
       type: () => click({ f: 1500 + Math.random() * 350, q: 1.2, vol: 0.12, body: 260, dur: 0.026 }),
       pop: (i) => {
         epiano({ f: [698.46, 880, 1046.5, 1174.66, 1046.5, 880, 783.99, 698.46][i % 8], dur: 1.5, vol: 0.1, wet: 0.4 });
         metal({ f: [349.23, 440, 523.25, 587.33, 523.25, 440, 392, 349.23][i % 8], dur: 1.2, vol: 0.025 });
-        if (i === 0 || i === 4) boom({ vol: 0.16, wet: 0.35 });   // « TeK » et « Sama » frappent
+        if (i === 0 || i === 4) boom({ vol: 0.16, wet: 0.35 });
       },
       sig: () => {
         [174.61, 220, 329.63, 392, 523.25].forEach((f, i) => epiano({ f, t: i * 0.04, dur: 2.4, vol: 0.065, wet: 0.4 }));
@@ -393,7 +374,6 @@ const sfx = (() => {
   };
   const intro = (k, ...a) => { const th = IN[introTheme] || IN.d; th[k](...a); };
 
-  // Notes utiles (ré majeur) pour les sons de l'interface.
   const N = { D5: 587.33, E5: 659.25, Fs5: 739.99, G5: 783.99, A5: 880, B5: 987.77, Cs6: 1108.73, D6: 1174.66, E6: 1318.51, Fs6: 1479.98, A6: 1760 };
 
   const fileCache = new Map();
@@ -403,12 +383,11 @@ const sfx = (() => {
     get muted() { return muted; },
     toggle() {
       muted = !muted;
-      try { localStorage.setItem('tek-muted', muted ? '1' : '0'); } catch (e) { /* rien */ }
+      try { localStorage.setItem('tek-muted', muted ? '1' : '0'); } catch (e) {}
       if (!muted) this.select();
       return muted;
     },
     unlock: ready,
-    // Intro (3 ambiances au choix)
     setIntroTheme(t) { if (IN[t]) introTheme = t; },
     get introThemes() { return Object.keys(IN); },
     type() { intro('type'); },
@@ -417,37 +396,30 @@ const sfx = (() => {
     rift() { intro('rift'); },
     name(i) { intro('name', i); },
     introEnd() { intro('end'); },
-    // Petit carillon (annonces : mise à jour dispo, nouvelle version d'un portage…).
     sparkle(t0 = 0) {
       [N.D5, N.Fs5, N.A5, N.D6].forEach((f, i) => bell({ f, t: t0 + i * 0.045, dur: 1.6, vol: 0.09 }));
     },
-    // Petits sons de licence (sélection = court, lancement = plus riche), en notes douces.
     franchise(key, kind) {
       const big = kind === 'launch';
       const SOUNDS = {
-        zelda: () => {            // fée scintillante
+        zelda: () => {
           const notes = big ? [1568, 2093, 2349, 2637, 3136, 2637, 3136, 3520] : [2093, 2637, 3136];
           notes.forEach((n, i) => bell({ f: n, t: i * 0.055, dur: 0.5, vol: 0.06 }));
         },
-        mario: () => {            // « boing » rebondissant
+        mario: () => {
           tone({ f: 260, f2: 720, dur: 0.16, vol: 0.12 });
           if (big) { tone({ f: 330, f2: 900, t: 0.18, dur: 0.16, vol: 0.12 }); bell({ f: 990, t: 0.36, dur: 0.5, vol: 0.1 }); }
         },
-        mariokart: () => {        // moteur qui monte
+        mariokart: () => {
           tone({ f: 90, f2: big ? 420 : 220, dur: big ? 0.8 : 0.3, vol: 0.12 });
           tone({ f: 92, f2: big ? 430 : 225, type: 'triangle', dur: big ? 0.8 : 0.3, vol: 0.06 });
         },
         drmario: () => { [880, 1175, big ? 1568 : 0].forEach((n, i) => n && bell({ f: n, t: i * 0.07, dur: 0.4, vol: 0.1 })); },
-        splatoon: () => {         // « splotch » d'encre
-          whoosh({ dur: big ? 0.45 : 0.25, from: 1800, to: 250, vol: 0.22 });
-          tone({ f: 420, f2: 110, dur: big ? 0.35 : 0.2, vol: 0.22 });
-          if (big) tone({ f: 380, f2: 95, t: 0.22, dur: 0.3, vol: 0.18 });
-        },
-        metroid: () => {          // nappe spatiale sombre
+        metroid: () => {
           pad([110, 164.8], { dur: big ? 1.4 : 0.7, vol: 0.06 });
         },
         kirby: () => { [784, 988, 1175, big ? 1568 : 0].forEach((n, i) => n && bell({ f: n, t: i * 0.08, dur: 0.45, vol: 0.12 })); },
-        starfox: () => {          // tir laser (adouci)
+        starfox: () => {
           tone({ f: 2000, f2: 400, dur: 0.14, vol: 0.08 });
           if (big) { tone({ f: 2000, f2: 400, t: 0.16, dur: 0.14, vol: 0.08 }); whoosh({ t: 0.3, dur: 0.6, from: 400, to: 3000, vol: 0.1 }); }
         },
@@ -459,11 +431,10 @@ const sfx = (() => {
       const fn = SOUNDS[key];
       if (!fn) return false;
       if (!ready()) return true;
-      bus = gameBus;            // sons de licence = volume « jeux »
+      bus = gameBus;
       try { fn(); } finally { bus = uiBus; }
       return true;
     },
-    // Son personnalisé (fichier) : décodé une fois puis gardé en mémoire.
     async file(url) {
       if (muted || !url) return;
       const c = ready();
@@ -473,15 +444,14 @@ const sfx = (() => {
           const buf = await (await fetch(url)).arrayBuffer();
           fileCache.set(url, await c.decodeAudioData(buf));
         }
-        if (current) { try { current.stop(); } catch (e) { /* déjà fini */ } }
+        if (current) { try { current.stop(); } catch (e) {} }
         const src = c.createBufferSource();
         src.buffer = fileCache.get(url);
         src.connect(gameBus);
         src.start();
         current = src;
-      } catch (e) { /* fichier illisible : on reste silencieux */ }
+      } catch (e) {}
     },
-    // Interface : clics de menu.
     setPrefs(p) { prefs = { ...prefs, ...p }; applyVolumes(); },
     hover() { if (!prefs.hoverSounds) return; click({ f: 3400, q: 3, vol: 0.13, dur: 0.016 }); },
     move() { if (!prefs.hoverSounds) return; click({ f: 3000, q: 2.6, vol: 0.16, dur: 0.018 }); },
@@ -490,7 +460,6 @@ const sfx = (() => {
     modOn() { click({ f: 2800, vol: 0.18, body: 1400 }); click({ t: 0.06, f: 3600, vol: 0.12, dur: 0.016 }); },
     modOff() { click({ f: 2200, vol: 0.18, body: 900 }); },
     launch() {
-      // Lancement : petit accord qui monte, comme l'ouverture d'un jeu sur console.
       click({ f: 2600, vol: 0.18, body: 1250 });
       [N.D5, N.A5, N.D6, N.Fs6].forEach((f, i) => bell({ f, t: 0.05 + i * 0.07, dur: 1.2, vol: 0.12 }));
       whoosh({ t: 0.05, dur: 0.6, from: 600, to: 3500, vol: 0.06 });
@@ -501,7 +470,6 @@ const sfx = (() => {
   };
 })();
 
-// ---------- Outils ----------
 const ICONS = {
   play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.5-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z"/></svg>',
   stop: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
@@ -520,13 +488,12 @@ function h(tag, props = {}, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
     if (k === 'class') el.className = v;
-    else if (k === 'icon') el.insertAdjacentHTML('afterbegin', ICONS[v]); // icônes constantes uniquement
+    else if (k === 'icon') el.insertAdjacentHTML('afterbegin', ICONS[v]);
     else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
     else if (k === 'style') el.style.cssText = v;
     else if (k === 'title' || k === 'aria-label' || k === 'placeholder') el.setAttribute(k, t(v));
     else el.setAttribute(k, v);
   }
-  // Les textes fixes de l'interface sont traduits automatiquement (voir i18n.js).
   for (const c of children.flat()) if (c != null && c !== false) el.append(typeof c === 'string' ? t(c) : c);
   return el;
 }
@@ -571,7 +538,7 @@ function toast(msg, kind) {
   el.classList.toggle('is-error', kind === 'error');
   el.classList.remove('leaving');
   el.hidden = false;
-  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';   // rejoue l'entrée
+  el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => {
     el.classList.add('leaving');
@@ -579,7 +546,6 @@ function toast(msg, kind) {
   }, 4200);
 }
 
-// ---------- Actions ----------
 async function playOrStop(game) {
   if (state.running.includes(game.id)) {
     sfx.stop();
@@ -591,12 +557,10 @@ async function playOrStop(game) {
   else gameSound(game, 'launch');
 }
 
-// Son d'un jeu : fichier perso / dossier « sons », sinon son intégré de sa licence.
 const lastPick = {};
 function gameSound(game, kind) {
   const urls = [].concat(game.soundUrls || (game.soundUrl ? [game.soundUrl] : []));
   if (urls.length) {
-    // Au hasard, sans rejouer deux fois de suite le même son.
     let i = Math.floor(Math.random() * urls.length);
     if (urls.length > 1 && i === lastPick[game.id]) i = (i + 1 + Math.floor(Math.random() * (urls.length - 1))) % urls.length;
     lastPick[game.id] = i;
@@ -618,28 +582,25 @@ function playButton(game) {
   return h('button', {
     'data-nav': 'hero-play',
     class: `btn btn-play ${live ? 'btn-stop' : 'btn-primary'}`,
-    icon: live ? 'stop' : 'play',
     onclick: () => playOrStop(game),
   }, live ? 'Arrêter' : 'Jouer');
 }
 
-// compact = version des cartes (moins de place) : sans « dossier » ni « mises à jour ».
 function toolButtons(game, compact) {
   const btns = [
-    h('button', { class: 'icon-btn', icon: 'save', title: 'Sauvegarder les saves (clic droit : ouvrir les copies)',
-      onclick: () => doBackup(game), oncontextmenu: (e) => { e.preventDefault(); api.openBackups(game.id); } }),
-    compact ? null : h('button', { class: 'icon-btn', icon: 'folder', title: 'Ouvrir le dossier du jeu', onclick: () => { sfx.select(); api.openFolder(game.id); } }),
+    h('button', { class: 'txt-btn', title: 'Sauvegarder les saves (clic droit : ouvrir les copies)',
+      onclick: () => doBackup(game), oncontextmenu: (e) => { e.preventDefault(); api.openBackups(game.id); } }, 'Sauvegarder'),
+    compact ? null : h('button', { class: 'txt-btn', title: 'Ouvrir le dossier du jeu', onclick: () => { sfx.select(); api.openFolder(game.id); } }, 'Dossier'),
   ];
-  if (game.modsDir) btns.push(h('button', { class: 'icon-btn', icon: 'mods', title: 'Mods', onclick: () => openMods(game) }));
-  if (game.repoUrl && !compact) btns.push(h('button', { class: 'icon-btn', icon: 'update', title: 'Voir les mises à jour du portage', onclick: () => { sfx.select(); api.openRepo(game.id); } }));
-  if (!compact) btns.push(h('button', { class: 'icon-btn', icon: 'camera', title: "Captures d'écran de ce jeu (bouton capture de la manette)", onclick: () => { sfx.select(); api.openCaptures(game.id); } }));
-  btns.push(h('button', { class: 'icon-btn', icon: 'gear', title: 'Paramètres', onclick: () => openEditor(game) }));
+  if (game.modsDir) btns.push(h('button', { class: 'txt-btn', title: 'Mods', onclick: () => openMods(game) }, 'Mods'));
+  if (game.repoUrl && !compact) btns.push(h('button', { class: 'txt-btn', title: 'Voir les mises à jour du portage', onclick: () => { sfx.select(); api.openRepo(game.id); } }, 'Mises à jour'));
+  if (!compact) btns.push(h('button', { class: 'txt-btn', title: "Captures d'écran de ce jeu (bouton capture de la manette)", onclick: () => { sfx.select(); api.openCaptures(game.id); } }, 'Captures'));
+  btns.push(h('button', { class: 'txt-btn', title: 'Paramètres', onclick: () => openEditor(game) }, 'Paramètres'));
   return btns.filter(Boolean).map((b, i) => { b.dataset.nav = `tool:${i}`; return b; });
 }
 
-// ---------- Rendu ----------
 let selectedId = null;
-try { selectedId = localStorage.getItem('rift-selected'); } catch (e) { /* rien */ }
+try { selectedId = localStorage.getItem('rift-selected'); } catch (e) {}
 let lastHover = null;
 document.getElementById('grid').addEventListener('mouseleave', () => { lastHover = null; });
 
@@ -652,12 +613,11 @@ function selectedGame() {
 function selectGame(game) {
   if (selectedId === game.id) return;
   selectedId = game.id;
-  try { localStorage.setItem('rift-selected', game.id); } catch (e) { /* rien */ }
+  try { localStorage.setItem('rift-selected', game.id); } catch (e) {}
   gameSound(game, 'select');
   render();
 }
 
-// Affiche portrait : jaquette, ou affiche générée (couleur + titre) s'il n'y en a pas.
 function posterArt(game, cls) {
   if (game.coverUrl) return h('img', { class: cls, src: game.coverUrl, alt: '', loading: 'lazy', draggable: 'false' });
   return h('div', { class: `${cls} gen`, style: `--hue:${hue(game.name)}` },
@@ -674,21 +634,15 @@ function renderHero() {
   const live = state.running.includes(g.id);
   hero.hidden = false;
   hero.style.setProperty('--hue', hue(g.name));
-  // Petite animation seulement quand on change de jeu (pas à chaque rafraîchissement).
   if (heroShownId !== null && heroShownId !== g.id) { hero.classList.remove('swap'); void hero.offsetWidth; hero.classList.add('swap'); }
   heroShownId = g.id;
-  const bg = h('div', { class: 'hero-bg' });
-  if (g.coverUrl) bg.style.backgroundImage = `url("${g.coverUrl}")`;
-  const side = g.coverUrl ? h('div', { class: 'hero-side', style: `background-image:url("${g.coverUrl}")`, 'aria-hidden': 'true' }) : null;
   const eyebrow = [t(live ? 'En cours' : g.lastPlayed ? 'Reprendre' : 'Sélectionné'), g.franchiseLabel].filter(Boolean).join(' · ');
   const stat = (label, value, title) => h('span', { class: 'stat-chip', title: title || '' }, h('b', {}, value), label ? t(label) : '');
   hero.append(
-    bg,
-    side,
-    h('div', { class: 'hero-poster' }, posterArt(g, 'hero-art'), live ? h('span', { class: 'hero-live' }, 'En cours') : null),
     h('div', { class: 'hero-info' },
       h('p', { class: 'eyebrow' }, live ? h('span', { class: 'live-dot', 'aria-hidden': 'true' }) : null, document.createTextNode(eyebrow)),
-      h('h2', {}, document.createTextNode(g.name)),
+      g.logoUrl ? h('h2', { class: 'hero-logo' }, h('img', { src: g.logoUrl, alt: g.name, draggable: 'false' }))
+        : h('h2', { class: g.franchiseKey ? `fr-${g.franchiseKey}` : '' }, document.createTextNode(g.name)),
       h('div', { class: 'hero-stats' },
         stat('de jeu', formatTime(g.playSeconds), g.playSource === 'jeu' ? 'Temps compté par le jeu lui-même (seulement quand sa fenêtre est active).' : 'Temps compté par Rift Launcher.'),
         stat('', formatAgo(g.lastPlayed), 'Dernière partie'),
@@ -697,9 +651,35 @@ function renderHero() {
       h('div', { class: 'hero-actions' },
         g.exePath ? playButton(g) : h('button', { class: 'btn btn-play btn-primary', 'data-nav': 'hero-play', onclick: () => openEditor(g) }, 'Configurer'),
         h('div', { class: 'tool-group' }, ...toolButtons(g))),
-      recompNote(g)),
+      recompNote(g),
+      g.shots && g.shots.length ? h('div', { class: 'hero-shots' }, ...g.shots.slice(0, 6).map((u) =>
+        h('img', { src: u, alt: '', loading: 'lazy', draggable: 'false', title: "Captures d'écran de ce jeu (bouton capture de la manette)", onclick: () => { sfx.select(); api.openCaptures(g.id); } }))) : null),
   );
 }
+
+let bgFor = null;
+function paintBg() {
+  const g = selectedGame();
+  if (!g || bgFor === g.id) return;
+  bgFor = g.id;
+  const pool = g.shots && g.shots.length ? g.shots : [g.coverUrl].filter(Boolean);
+  const el = document.getElementById('app-bg');
+  el.style.backgroundImage = pool.length ? `url("${pool[Math.floor(Math.random() * pool.length)]}")` : '';
+  el.classList.remove('swap'); void el.offsetWidth; el.classList.add('swap');
+}
+
+const SORTS = {
+  recent: (a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0),
+  time: (a, b) => b.playSeconds - a.playSeconds,
+  name: (a, b) => a.name.localeCompare(b.name),
+};
+function shownGames() {
+  const q = document.getElementById('lib-search').value.trim().toLowerCase();
+  return state.games.filter((g) => !q || g.name.toLowerCase().includes(q))
+    .sort(SORTS[document.getElementById('lib-sort').value] || SORTS.recent);
+}
+document.getElementById('lib-search').addEventListener('input', () => render());
+document.getElementById('lib-sort').addEventListener('change', () => { sfx.select(); render(); });
 
 function renderPoster(game) {
   const live = state.running.includes(game.id);
@@ -733,7 +713,6 @@ function renderPoster(game) {
       h('span', {}, document.createTextNode([formatTime(game.playSeconds), game.franchiseLabel].filter(Boolean).join(' · ')))));
 }
 
-// ---------- Nouvelles versions des portages (recomps) ----------
 function recompNote(g) {
   const r = g.recomp;
   if (!r) return null;
@@ -766,7 +745,6 @@ async function markRecompDone(g) {
   await refreshLibrary();
 }
 
-// Nouvelle capture d'écran (bouton capture de la manette).
 let captureSeen = null;
 function announceCapture() {
   const c = state.capture;
@@ -779,7 +757,6 @@ function announceCapture() {
   }
 }
 
-// Prévient une fois par session quand un portage a une nouvelle version.
 const recompAnnounced = new Set();
 function announceRecomps() {
   const fresh = state.games.filter((g) => g.recomp && g.recomp.isNew && !recompAnnounced.has(g.id + g.recomp.latest));
@@ -791,7 +768,6 @@ function announceRecomps() {
   sfx.sparkle();
 }
 
-// ---------- Mises à jour ----------
 let updateDismissed = '';
 function renderUpdate() {
   const bar = document.getElementById('update-bar');
@@ -825,14 +801,13 @@ async function startUpdate(u) {
     return;
   }
   document.getElementById('update-msg').textContent = t('Installation… La fenêtre se recharge dès que la nouvelle version est prête.');
-  // On attend que le nouveau Rift Launcher réponde, puis on recharge la page.
   const started = Date.now();
   const timer = setInterval(async () => {
     try {
       const res = await fetch('/api/version', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Token': TOKEN }, body: '{}' });
       const v = await res.json();
       if (v.version === u.version) { clearInterval(timer); location.reload(); }
-    } catch (e) { /* redémarrage en cours */ }
+    } catch (e) {}
     if (Date.now() - started > 120000) {
       clearInterval(timer);
       document.getElementById('update-msg').textContent = t('La mise à jour prend du temps. Ferme cette fenêtre et relance Rift Launcher.');
@@ -841,7 +816,6 @@ async function startUpdate(u) {
 }
 
 function render() {
-  // Garde le focus (manette) sur le même élément après la reconstruction.
   const active = document.activeElement;
   const navKey = active && !active.closest('dialog') && active.dataset ? active.dataset.nav : '';
   renderUpdate();
@@ -849,8 +823,13 @@ function render() {
   const n = state.games.length;
   document.getElementById('total').textContent = t(n > 1 ? '{n} jeux · {time} de jeu au total' : '{n} jeu · {time} de jeu au total', { n, time: formatTime(total) });
   renderHero();
-  document.getElementById('grid').replaceChildren(...state.games.map(renderPoster));
+  paintBg();
+  document.getElementById('grid').replaceChildren(...shownGames().map(renderPoster));
   document.getElementById('empty').hidden = n > 0;
+  const recent = state.games.flatMap((g) => (g.shots || []).slice(0, 4).map((u) => ({ g, u }))).slice(0, 8);
+  document.getElementById('recent-shots').hidden = !recent.length;
+  document.getElementById('recent-shots-row').replaceChildren(...recent.map(({ g, u }) =>
+    h('img', { src: u, alt: g.name, loading: 'lazy', draggable: 'false', title: g.name, onclick: () => { sfx.select(); api.openCaptures(g.id); } })));
   document.getElementById('library-title').hidden = n === 0;
   if (dlg.open && editingId) paintMedia();
   if (navKey) {
@@ -862,7 +841,6 @@ function render() {
   pad.paintHints();
 }
 
-// ---------- Édition ----------
 const dlg = document.getElementById('editor');
 const form = document.getElementById('form');
 const FIELDS = ['name', 'exePath', 'saveDir', 'modsDir', 'version', 'repoUrl', 'args', 'env', 'franchise'];
@@ -886,10 +864,10 @@ function openEditor(game) {
 form.addEventListener('click', async (e) => {
   const field = e.target.dataset && e.target.dataset.pick;
   if (!field) return;
-  const picked = field === 'exePath' ? await api.pickExe() : await api.pickDir(field === 'modsDir' ? 'mods' : 'dir');
+  const current = form.elements[field].value.trim() || (field !== 'exePath' ? form.elements.exePath.value.trim() : '');
+  const picked = field === 'exePath' ? await api.pickExe(current) : await api.pickDir(field === 'modsDir' ? 'mods' : 'dir', current);
   if (!picked) return;
   form.elements[field].value = picked;
-  // Propose un nom à partir du dossier si le champ est vide.
   if (field === 'exePath' && !form.elements.name.value.trim()) {
     const parts = picked.split(/[\\/]/);
     form.elements.name.value = (parts.length > 1 ? parts[parts.length - 2] : parts[0]).replace(/[-_]+/g, ' ');
@@ -948,6 +926,8 @@ document.getElementById('media').addEventListener('click', async (e) => {
   const g = state.games.find((x) => x.id === editingId);
   let r = null;
   if (act === 'cover-pick') r = await api.coverPick(editingId);
+  else if (act === 'logo-pick') r = await api.logoPick(editingId);
+  else if (act === 'logo-clear') r = await api.assetClear(editingId, 'logo');
   else if (act === 'cover-clear') r = await api.assetClear(editingId, 'cover');
   else if (act === 'cover-search') { openCoverSearch(g); return; }
   else if (act === 'sound-pick') r = await api.soundPick(editingId);
@@ -959,7 +939,6 @@ document.getElementById('media').addEventListener('click', async (e) => {
   await refreshLibrary();
 });
 
-// ---------- Recherche de jaquettes en ligne (SteamGridDB) ----------
 const coversDlg = document.getElementById('covers');
 const coversGrid = document.getElementById('covers-grid');
 const coversStatus = document.getElementById('covers-status');
@@ -1017,7 +996,6 @@ document.getElementById('covers-key-save').addEventListener('click', async () =>
   runCoverSearch();
 });
 
-// ---------- Réglages ----------
 const settingsDlg = document.getElementById('settings');
 async function openSettings() {
   const s = await api.settings();
@@ -1045,13 +1023,12 @@ async function openSettings() {
   if (tab) tab.focus();
 }
 
-// ---------- Langue ----------
 {
   const sel = document.getElementById('pref-lang');
   sel.replaceChildren(...I18N_LANGS.map((l) => {
     const o = document.createElement('option');
     o.value = l.code;
-    o.textContent = l.code === 'auto' ? t(l.name) : l.name;   // chaque langue écrite dans sa propre langue
+    o.textContent = l.code === 'auto' ? t(l.name) : l.name;
     return o;
   }));
   sel.value = i18n.choice;
@@ -1065,7 +1042,6 @@ function setLanguage(code, fromSettings) {
   document.getElementById('pref-lang').value = i18n.choice;
   prefsState.lang = i18n.choice;
   if (fromSettings) { api.prefsSave(prefsState).catch(() => {}); sfx.select(); }
-  // Tout ce qui est dessiné par le code est refait dans la nouvelle langue.
   lastJson = '';
   render();
   paintMute();
@@ -1073,7 +1049,6 @@ function setLanguage(code, fromSettings) {
   if (dlg.open && editingId) paintMedia();
 }
 
-// ---------- Catégories des réglages ----------
 const SET_TABS = [...document.querySelectorAll('.set-tab')].map((b) => b.dataset.tab);
 let currentSetTab = 'general';
 function showSetTab(name, quiet) {
@@ -1096,7 +1071,6 @@ document.getElementById('set-nav').addEventListener('click', (e) => {
   const b = e.target.closest('.set-tab');
   if (b) showSetTab(b.dataset.tab);
 });
-// À la manette, passer sur un onglet suffit à l'ouvrir.
 document.getElementById('set-nav').addEventListener('focusin', (e) => {
   const b = e.target.closest('.set-tab');
   if (b && pad.active && b.dataset.tab !== currentSetTab) showSetTab(b.dataset.tab);
@@ -1113,7 +1087,6 @@ function paintPadLegend() {
     item(L.home, 'jeu ↔ launcher'), L.capLabel ? item(L.capLabel, 'capture') : null);
 }
 
-// ---------- Paramètres généraux ----------
 let prefsState = {};
 const PREF_SLIDERS = ['volume', 'uiVolume', 'gameVolume'];
 const PREF_TOGGLES = ['hoverSounds', 'debugLog', 'discord', 'recompCheck', 'homeToggle', 'captureButton'];
@@ -1126,7 +1099,15 @@ function paintPrefs(p) {
     document.getElementById(`pref-${k}-val`).textContent = `${p[k]} %`;
   }
   for (const k of PREF_TOGGLES) document.getElementById(`pref-${k}`).setAttribute('aria-checked', String(Boolean(p[k])));
+  document.getElementById('pref-theme').value = p.theme || 'rift';
+  document.documentElement.dataset.theme = p.theme || 'rift';
 }
+document.getElementById('pref-theme').addEventListener('change', (e) => {
+  prefsState.theme = e.target.value;
+  document.documentElement.dataset.theme = e.target.value;
+  sfx.select();
+  savePrefsSoon();
+});
 
 let prefsTimer = null;
 function savePrefsSoon() {
@@ -1142,7 +1123,6 @@ for (const k of PREF_SLIDERS) {
     sfx.setPrefs(prefsState);
     savePrefsSoon();
   });
-  // Petit son d'essai au relâchement, sur le bon volume.
   input.addEventListener('change', () => { if (k === 'gameVolume') sfx.franchise('zelda', 'select'); else sfx.select(); });
 }
 for (const k of PREF_TOGGLES) {
@@ -1216,11 +1196,9 @@ document.getElementById('settings-save').addEventListener('click', async () => {
 document.getElementById('open-covers-dir').addEventListener('click', () => { sfx.select(); api.openAssets('covers'); });
 document.getElementById('open-sounds-dir').addEventListener('click', () => { sfx.select(); api.openAssets('sounds'); });
 
-// Liste des licences pour le menu « Licence » des paramètres d'un jeu,
-// et préférences (volumes, intro) appliquées dès le démarrage.
 const settingsReady = api.settings();
 settingsReady.then((s) => {
-  if (s.prefs) { prefsState = { ...s.prefs }; sfx.setPrefs(s.prefs); }
+  if (s.prefs) { prefsState = { ...s.prefs }; sfx.setPrefs(s.prefs); document.documentElement.dataset.theme = s.prefs.theme || 'rift'; }
   if (s.prefs && s.prefs.lang && s.prefs.lang !== i18n.choice) setLanguage(s.prefs.lang, false);
   franchiseList = [].concat(s.franchises || []);
   const sel = document.getElementById('franchise-select');
@@ -1239,15 +1217,13 @@ document.getElementById('add').addEventListener('click', () => openEditor(null))
 
 const muteBtn = document.getElementById('mute');
 function paintMute() {
-  muteBtn.replaceChildren();
-  muteBtn.insertAdjacentHTML('afterbegin', ICONS[sfx.muted ? 'mute' : 'sound']); // icônes constantes
+  muteBtn.textContent = t(sfx.muted ? 'Muet' : 'Son');
   muteBtn.title = t(sfx.muted ? 'Remettre le son' : 'Couper le son');
   muteBtn.setAttribute('aria-label', muteBtn.title);
 }
 muteBtn.addEventListener('click', () => { sfx.toggle(); paintMute(); });
 paintMute();
 
-// ---------- Page des mods ----------
 const modsDlg = document.getElementById('mods');
 const modsList = document.getElementById('mods-list');
 const modsSearch = document.getElementById('mods-search');
@@ -1315,18 +1291,79 @@ document.getElementById('mods-close').addEventListener('click', () => modsDlg.cl
 document.getElementById('mods-refresh').addEventListener('click', () => { sfx.select(); loadMods(); });
 document.getElementById('mods-open').addEventListener('click', () => { sfx.select(); api.openMods(modsGame.id); });
 
+const welcomeDlg = document.getElementById('welcome');
+const welcomeList = document.getElementById('welcome-list');
+const welcomeAdd = document.getElementById('welcome-add');
 
-// ---------- Manette (Xbox, PlayStation, Switch Pro…) et mode Big Picture ----------
-// Boutons selon la manette. ok/back = index des boutons « valider » et « retour »
-// (sur Switch, A est à droite et B en bas : on les inverse comme sur la console).
+async function openWelcome(direct) {
+  const r = await api.welcome();
+  if (r.error) { toast(r.error, 'error'); return; }
+  document.getElementById('welcome-ask').hidden = direct;
+  document.getElementById('welcome-pick').hidden = !direct;
+  paintWelcome([].concat(r.games || []));
+  sfx.select();
+  if (!welcomeDlg.open) welcomeDlg.showModal();
+  const first = direct ? welcomeList.querySelector('input:not(:disabled)') : document.getElementById('welcome-yes');
+  if (first) first.focus();
+}
+
+function paintWelcome(games) {
+  welcomeList.replaceChildren(...games.map((g) => {
+    const box = h('input', { type: 'checkbox', 'data-n': String(g.n), 'aria-label': g.name, onchange: countWelcome });
+    box.checked = !g.owned;
+    box.disabled = g.owned;
+    const repo = g.repoUrl ? g.repoUrl.replace(/^https?:\/\//, '') : '';
+    return h('li', {},
+      h('label', { class: `welcome-game${g.owned ? ' is-owned' : ''}` },
+        box,
+        g.coverUrl ? h('img', { class: 'welcome-cover', src: g.coverUrl, alt: '', draggable: 'false' }) : h('span', { class: 'welcome-cover' }),
+        h('span', { class: 'welcome-info' },
+          h('strong', {}, document.createTextNode(g.name)),
+          g.owned ? h('span', {}, 'Déjà dans ta bibliothèque')
+            : repo ? h('span', { class: 'welcome-repo' }, document.createTextNode(repo))
+            : h('span', {}, 'Lien GitHub à venir')),
+        g.soundUrl ? h('button', {
+          class: 'welcome-play', type: 'button', 'aria-label': t('Écouter le son de {name}', { name: g.name }),
+          onclick: (e) => { e.preventDefault(); sfx.file(g.soundUrl); },
+        }, '▶') : null));
+  }));
+  countWelcome();
+}
+
+function countWelcome() {
+  const n = welcomeList.querySelectorAll('input:checked').length;
+  welcomeAdd.textContent = n ? t(n > 1 ? 'Ajouter {n} jeux' : 'Ajouter 1 jeu', { n }) : t('Ajouter');
+  welcomeAdd.disabled = !n;
+}
+
+async function finishWelcome(picks) {
+  const r = await api.welcomeDone(picks);
+  if (r.error) { toast(r.error, 'error'); return; }
+  if (welcomeDlg.open) welcomeDlg.close();
+  if (!r.added) return;
+  sfx.save();
+  toast(t(r.added > 1 ? '{n} jeux ajoutés à ta bibliothèque.' : '1 jeu ajouté à ta bibliothèque.', { n: r.added }));
+  await refreshLibrary();
+}
+
+document.getElementById('welcome-yes').addEventListener('click', () => {
+  sfx.select();
+  document.getElementById('welcome-ask').hidden = true;
+  document.getElementById('welcome-pick').hidden = false;
+  const first = welcomeList.querySelector('input:not(:disabled)');
+  if (first) first.focus();
+});
+document.getElementById('welcome-skip').addEventListener('click', () => finishWelcome([]));
+document.getElementById('welcome-skip-list').addEventListener('click', () => finishWelcome([]));
+welcomeAdd.addEventListener('click', () => finishWelcome([...welcomeList.querySelectorAll('input:checked')].map((b) => Number(b.dataset.n))));
+welcomeDlg.addEventListener('cancel', (e) => { e.preventDefault(); finishWelcome([]); });
+document.getElementById('welcome-open').addEventListener('click', () => { settingsDlg.close(); openWelcome(true); });
+
 const LAYOUTS = {
   xbox: { name: 'Xbox', ok: 0, back: 1, viewBtn: 8, capBtn: 17, capLabel: '', face: { ok: ['A', 'xa'], back: ['B', 'xb'], left: ['X', 'xx'], top: ['Y', 'xy'] }, sh: 'LB RB', menu: '☰', view: '⧉', home: 'Ⓧ' },
   ps: { name: 'PlayStation', ok: 0, back: 1, viewBtn: 17, capBtn: 8, capLabel: 'SHARE', face: { ok: ['✕', 'px'], back: ['○', 'po'], left: ['□', 'pq'], top: ['△', 'pt'] }, sh: 'L1 R1', menu: 'OPTIONS', view: 'PAVÉ', home: 'PS' },
   switch: { name: 'Switch', ok: 1, back: 0, viewBtn: 8, capBtn: 17, capLabel: '◉', face: { ok: ['A', 'na'], back: ['B', 'nb'], left: ['Y', 'ny'], top: ['X', 'nx'] }, sh: 'L R', menu: '+', view: '−', home: '⌂' },
 };
-// Croix ou stick : se déplacer · A : valider / jouer · B : retour · X : sauvegarder · Y : mods
-// LB / RB : jeu précédent / suivant · Menu : réglages · Vue (Select) : Big Picture.
-// La manette est ignorée quand la fenêtre n'est pas au premier plan (pendant le jeu).
 const pad = (() => {
   const FOCUSABLE = 'button:not([disabled]), input:not([type=hidden]):not([disabled]), select:not([disabled]), textarea, summary, a[href], [tabindex="0"]';
   const REPEAT = ['up', 'down', 'left', 'right', 'lb', 'rb'];
@@ -1359,7 +1396,6 @@ const pad = (() => {
       if (sel) focus(sel, true);
     } else if (list[0]) focus(list[0]);
   }
-  // Curseurs et menus déroulants : gauche/droite change la valeur.
   function adjust(el, d) {
     if (el.tagName === 'INPUT' && el.type === 'range') {
       const step = Number(el.step) || 1;
@@ -1385,14 +1421,12 @@ const pad = (() => {
     if (!list.length) return;
     const cur = document.activeElement;
     if (!cur || cur === document.body || !list.includes(cur)) { start(root, list); return; }
-    // Depuis la croix « Fermer » d'une fenêtre, bas va au premier vrai réglage.
     if (dir === 'down' && cur.id && cur.id.endsWith('-close')) {
       const first = list.find((el) => el !== cur && !(el.id || '').endsWith('-close'));
       if (first) { focus(first); return; }
     }
     const horiz = dir === 'left' || dir === 'right';
     if (horiz && adjust(cur, dir === 'right' ? 1 : -1)) return;
-    // Dans la bibliothèque, gauche/droite suit l'ordre des jeux (et passe à la ligne).
     if (horiz && isPoster(cur)) {
       const posters = list.filter(isPoster);
       const i = posters.indexOf(cur) + (dir === 'right' ? 1 : -1);
@@ -1411,7 +1445,6 @@ const pad = (() => {
       const dy = b.top + b.height / 2 - ay;
       const main = { right: dx, left: -dx, down: dy, up: -dy }[dir];
       const side = horiz ? dy : dx;
-      // Il faut vraiment être dans la direction (pas un voisin de la même ligne).
       const gap = horiz ? (dir === 'right' ? b.left - a.right : a.left - b.right) : (dir === 'down' ? b.top - a.bottom : a.top - b.bottom);
       if (main <= 4 || gap < -Math.min(a.width, a.height) / 2) continue;
       const score = Math.max(gap, 0) + Math.abs(side) * (horiz ? 3 : 1.4);
@@ -1427,7 +1460,7 @@ const pad = (() => {
     const el = document.activeElement;
     if (!el || el === document.body || !root.contains(el)) { start(root, items(root)); return; }
     if (isPoster(el)) { el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return; }
-    if (el.tagName === 'INPUT' && el.type !== 'checkbox' && el.type !== 'range') return; // champ texte : rien
+    if (el.tagName === 'INPUT' && el.type !== 'checkbox' && el.type !== 'range') return;
     el.click();
   }
   function back() {
@@ -1463,8 +1496,6 @@ const pad = (() => {
     paintHints();
   }
 
-  // Bouton Home / Xbox / PS : passe du launcher au jeu (et inversement).
-  // Pour les manettes Xbox, c'est Rift Launcher (côté Windows) qui le gère, même pendant le jeu.
   let homeBusy = false;
   function homeToggle() {
     if (layoutKey === 'xbox' || homeBusy || !prefsState.homeToggle) return;
@@ -1472,7 +1503,6 @@ const pad = (() => {
     api.toggleFocus().catch(() => {}).finally(() => setTimeout(() => { homeBusy = false; }, 300));
   }
 
-  // Type de manette d'après son nom (et l'identifiant du fabricant).
   function padType(gp) {
     const id = (gp.id || '').toLowerCase();
     if (/xbox|xinput|045e/.test(id)) return 'xbox';
@@ -1495,7 +1525,6 @@ const pad = (() => {
       const s = {
         up: press(12) || ax(1) < -0.55, down: press(13) || ax(1) > 0.55,
         left: press(14) || ax(0) < -0.55, right: press(15) || ax(0) > 0.55,
-        // Switch : A (à droite) valide et B (en bas), retour, comme sur la console.
         a: press(lay.ok), b: press(lay.back), x: press(2), y: press(3),
         lb: press(4), rb: press(5), view: press(lay.viewBtn), menu: press(9), home: press(16), cap: press(lay.capBtn),
       };
@@ -1505,8 +1534,6 @@ const pad = (() => {
   }
   let homePrev = false;
   let capPrev = false;
-  // La surveillance ne s'arrête jamais : une manette Bluetooth qui se coupe puis revient
-  // doit être reprise sans attendre l'événement « gamepadconnected » (Edge ne l'envoie pas toujours).
   const seenPads = new Set();
   let hadPads = false;
   function tick() {
@@ -1514,7 +1541,7 @@ const pad = (() => {
     if (!count) {
       if (hadPads) { hadPads = false; api.log('INFO', 'Manette perdue par l\'interface (déconnectée ?), en attente de son retour'); }
       prev = {}; homePrev = false; capPrev = false;
-      setTimeout(tick, 400);   // pas de manette : on vérifie 2 à 3 fois par seconde
+      setTimeout(tick, 400);
       return;
     }
     if (!hadPads) {
@@ -1530,14 +1557,11 @@ const pad = (() => {
       const t = padType(touched);
       if (t !== layoutKey) { layoutKey = t; document.body.dataset.pad = t; paintHints(); }
     }
-    // Le bouton Home marche aussi quand le jeu est devant (si Windows laisse la manette à la fenêtre).
     if (st.home && !homePrev) fire('home');
     homePrev = st.home;
-    // Bouton capture (Share / Create / Capture) : capture d'écran, même en plein jeu.
     if (st.cap && !capPrev) fire('cap');
     capPrev = st.cap;
     if (!document.hasFocus() || document.hidden) { wasAway = true; return; }
-    // Retour au premier plan (jeu fermé) : on ignore les boutons encore enfoncés.
     if (wasAway) { wasAway = false; prev = st; return; }
     const now = performance.now();
     for (const k of Object.keys(st)) {
@@ -1559,7 +1583,6 @@ const pad = (() => {
   function paintHints() {
     if (!active) { hintsEl.hidden = true; return; }
     const root = scope();
-    // Les fenêtres (dialog) passent au-dessus de tout : la barre d'aide va dedans pour rester visible.
     const host = root && root !== document.body ? root : document.body;
     if (hintsEl.parentNode !== host) host.append(hintsEl);
     const g = game();
@@ -1593,16 +1616,13 @@ const pad = (() => {
   });
   addEventListener('mousemove', (e) => { if (active && Math.abs(e.movementX) + Math.abs(e.movementY) > 4) setActive(false); });
   addEventListener('mousedown', () => { if (active) setActive(false); });
-  // Les dialogues qui se ferment rendent la main à la bibliothèque.
   document.querySelectorAll('dialog').forEach((d) => d.addEventListener('close', () => setTimeout(paintHints, 0)));
-  // Une fenêtre qui s'ouvre : la barre d'aide passe dedans.
   const watch = new MutationObserver(() => paintHints());
   document.querySelectorAll('dialog').forEach((d) => watch.observe(d, { attributes: true, attributeFilter: ['open'] }));
   run();
   return { get active() { return active; }, get layout() { return layoutKey; }, paintHints };
 })();
 
-// Plein écran : l'API du navigateur demande un clic. À la manette, Windows appuie sur F11 pour nous.
 const isWindowFull = () => Math.abs(window.innerHeight - screen.height) < 4 && Math.abs(window.innerWidth - screen.width) < 4;
 function setFull(on) {
   if (on) {
@@ -1623,7 +1643,6 @@ function setBig(on) {
   btn.setAttribute('aria-pressed', String(on));
   sfx.select();
   pad.paintHints();
-  // Garde en vue l'élément choisi à la manette (sinon le haut de la page).
   const cur = document.activeElement;
   setTimeout(() => {
     if (cur && cur !== document.body && !cur.closest('dialog')) cur.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -1633,25 +1652,20 @@ function setBig(on) {
 let wasFull = false;
 addEventListener('resize', () => {
   const full = isWindowFull() || Boolean(document.fullscreenElement);
-  // Sortie du plein écran F11 (touche F11 ou Échap) : on quitte aussi Big Picture.
   if (wasFull && !full && document.body.classList.contains('big')) setBig(false);
   wasFull = full;
 });
 document.addEventListener('fullscreenchange', () => {
-  // Échap quitte le plein écran : on quitte aussi Big Picture.
   if (!document.fullscreenElement && document.body.classList.contains('big')) setBig(false);
 });
 {
   const btn = document.getElementById('big-btn');
-  btn.insertAdjacentHTML('afterbegin', ICONS.big); // icône constante
+  btn.textContent = 'Big Picture';
   btn.addEventListener('click', () => setBig(!document.body.classList.contains('big')));
 }
 
-
-// La barre du haut devient « verre dépoli » quand on fait défiler.
 addEventListener('scroll', () => document.body.classList.toggle('scrolled', scrollY > 8), { passive: true });
 
-// ---------- Démarrage ----------
 var lastJson = '';
 api.onChange((data) => {
   const json = JSON.stringify(data);
@@ -1661,13 +1675,15 @@ api.onChange((data) => {
   render();
 });
 api.onToast(toast);
-api.getLibrary().then((data) => { state = data; render(); });
-setInterval(render, 60000); // rafraîchit les « Il y a … »
+api.getLibrary().then((data) => {
+  state = data;
+  render();
+  if (!data.welcome) return;
+  const wait = () => (document.getElementById('splash') ? setTimeout(wait, 300) : openWelcome(false));
+  wait();
+});
+setInterval(render, 60000);
 
-
-// ---------- Animation d'ouverture ----------
-// Scène 1 : « made by » s'écrit, « TeK_Sama » surgit lettre par lettre.
-// Scène 2 : la faille s'ouvre, l'icône s'anime et « Rift Launcher » apparaît.
 function startSplash() {
   const el = document.getElementById('splash');
   const sceneSig = document.getElementById('scene-sig');
@@ -1686,12 +1702,9 @@ function startSplash() {
   made.append(caret);
   sfx.unlock();
 
-  // --- Scène 1
   const text = 'made by';
   [...text].forEach((ch, i) => at(250 + i * 95, () => { caret.before(ch); if (ch !== ' ') sfx.type(); }));
   const typed = 250 + text.length * 95;
-  // Les lettres sont dessinées une fois dans une image (canvas), puis seule l'image bouge :
-  // le texte n'est plus redessiné à chaque image de l'animation (fini les petits artefacts blancs).
   const fontSize = parseFloat(getComputedStyle(tek).fontSize) || 120;
   const font = `900 ${fontSize}px "Segoe UI Black", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif`;
   const scale = Math.min(4, (window.devicePixelRatio || 1) * 1.5);
@@ -1699,7 +1712,7 @@ function startSplash() {
   measure.font = font;
   const letterCanvas = (ch, sama) => {
     const pad = fontSize * 0.4;
-    const adv = measure.measureText(ch).width - fontSize * 0.02;   // même espacement que le texte
+    const adv = measure.measureText(ch).width - fontSize * 0.02;
     const w = adv + pad * 2, hgt = fontSize + pad * 2;
     const cv = document.createElement('canvas');
     cv.width = Math.ceil(w * scale); cv.height = Math.ceil(hgt * scale);
@@ -1734,7 +1747,6 @@ function startSplash() {
   const sigEnd = typed + 150 + 8 * 75;
   at(sigEnd + 250, () => sfx.introSig());
 
-  // --- Scène 2
   const riftStart = sigEnd + 1500;
   at(riftStart - 450, () => { sceneSig.classList.add('leave'); caret.remove(); });
   at(riftStart, () => {
@@ -1770,7 +1782,6 @@ function startSplash() {
   }
   at(riftStart + 420 + k * 45 + 200, () => sfx.introEnd());
 
-  // --- Fondu vers la bibliothèque
   const close = () => {
     if (done) return;
     done = true;
@@ -1782,5 +1793,4 @@ function startSplash() {
   el.addEventListener('click', close);
   addEventListener('keydown', close, { once: true });
 }
-// L'intro se joue à chaque ouverture (un clic ou un bouton la passe).
 startSplash();

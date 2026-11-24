@@ -1,31 +1,27 @@
 {
-  "about": "Préréglage de TeK_Sama : appliqué au premier lancement de Rift Launcher (aucun chemin de fichier).",
+  "about": "Jeux proposés par l'écran d'accueil de Rift Launcher. Les chemins de jaquette et de son partent du dossier app.",
   "games": [
     {
       "name": "Zelda: Tears of the Kingdom",
       "version": "0.3.1",
       "repoUrl": "https://github.com/valentderah/totk-pc-recomp",
-      "franchise": "",
-      "args": "",
-      "env": "",
-      "coverFile": "totk.webp"
+      "cover": "preset/covers/totk.webp",
+      "sound": ""
     },
     {
       "name": "Zelda: Breath of the Wild",
       "version": "1.9.0",
       "repoUrl": "",
-      "franchise": "",
-      "args": "",
-      "env": "",
-      "coverFile": "botw.webp"
+      "cover": "preset/covers/botw.webp",
+      "sound": ""
     },
     {
-      "name": "Splatoon 1",
+      "name": "Grand Theft Auto VI",
       "version": "",
       "repoUrl": "",
-      "franchise": "splatoon",
-      "args": "",
-      "env": ""
+      "cover": "web/covers/gta6.jpg",
+      "coverFallback": "web/covers/gta6.svg",
+      "sound": "web/sons/gta6.wav"
     }
   ]
 }

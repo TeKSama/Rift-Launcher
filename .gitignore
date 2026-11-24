@@ -1,10 +1,10 @@
-# Built files
+# Build output
+target/
+dist/
+build/tmp/
 *.exe
-# Official game artwork is never committed
-app/preset/covers/
-app/web/covers/*.webp
-app/web/covers/*.jpg
-app/web/covers/*.png
+# Developer data
+dev-data/
 # Personal data (never part of the project)
 .env
 *.env
